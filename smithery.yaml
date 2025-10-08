@@ -2,12 +2,6 @@
 
 startCommand:
   type: stdio
-  commandFunction:
-    # A JS function that produces the CLI command based on the given config to start the MCP on stdio.
-    |-
-    (config) => ({ command: 'python', args: ['smu_mcp.py'], env: {} })
-  configSchema:
-    # JSON Schema defining the configuration options for the MCP.
-    type: object
-    description: No configuration needed
-  exampleConfig: {}
+  command: python3
+  args:
+    - smu_mcp.py
