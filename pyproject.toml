@@ -9,9 +9,11 @@ description = "SMU MCP Server for meal and schedule management"
 authors = [
     {name = "SMU Team"}
 ]
+requires-python = ">=3.11"
 dependencies = [
     "pandas",
-    "pymysql"
+    "pymysql",
+    "fastmcp @ git+https://github.com/jlowin/fastmcp.git"
 ]
 
 [project.scripts]
