@@ -2,9 +2,6 @@
 
 runtime: python
 startCommand:
-  type: stdio
-  commandFunction: |
-    (config) => ({
-      command: 'python3',
-      args: ['smu_mcp.py']
-    })
+  command: python3
+  args:
+    - smu_mcp.py
