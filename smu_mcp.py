@@ -72,11 +72,20 @@ class mcp:
             return func
         return decorator
 
-@app.route('/', methods=['POST', 'OPTIONS'])
-def handle_mcp_request():
+@app.route('/', methods=['POST', 'OPTIONS', 'GET'])
+@app.route('/<path:path>', methods=['POST', 'OPTIONS', 'GET'])
+def handle_mcp_request(path=''):
     """MCP 요청 처리"""
     if request.method == 'OPTIONS':
         return '', 200
+    
+    if request.method == 'GET':
+        return jsonify({
+            "name": "smuchat",
+            "version": "1.0.0",
+            "description": "SMU MCP Server",
+            "status": "running"
+        })
     
     try:
         req = request.get_json()
