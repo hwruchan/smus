@@ -1,0 +1,21 @@
+# Smithery configuration file: https://smithery.ai/docs/build/project-config
+
+startCommand:
+  type: stdio
+  commandFunction:
+    |-
+    (config) => ({
+      command: 'python3',
+      args: ['solo_server.py'],
+      env: {
+        DB_HOST: 'oneteam-db.chigywqq0qt3.ap-northeast-2.rds.amazonaws.com',
+        DB_USER: 'admin',
+        DB_PASSWORD: 'Oneteam2025!',
+        DB_NAME: 'oneteam_DB',
+        DB_PORT: '3306'
+      }
+    })
+  configSchema:
+    type: object
+    properties: {}
+  exampleConfig: {}
