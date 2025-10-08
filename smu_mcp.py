@@ -4,6 +4,8 @@ import asyncio
 from typing import Any, Dict, List
 import os
 import pymysql
+from http.server import HTTPServer, BaseHTTPRequestHandler
+from urllib.parse import urlparse, parse_qs
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 from pymysql.cursors import DictCursor
@@ -119,50 +121,67 @@ class SimpleMCPServer:
         else:
             return {"error": {"code": -1, "message": f"Unknown method: {method}"}}
     
-    async def run(self):
-        # 초기화 메시지 전송
-        init_message = {
-            "jsonrpc": "2.0",
-            "method": "initialize",
-            "params": {
-                "protocolVersion": "2024-11-05",
-                "capabilities": {"tools": {}, "prompts": {}},
-                "clientInfo": {"name": "smithery", "version": "1.0.0"}
-            },
-            "id": 1
-        }
-        print(json.dumps(init_message), flush=True)
+    def create_http_handler(self):
+        """HTTP 핸들러 클래스 생성"""
+        server_instance = self
         
-        # 메시지 처리
-        while True:
-            try:
-                line = await asyncio.get_event_loop().run_in_executor(None, sys.stdin.readline)
-                if not line:
-                    break
-                
-                line = line.strip()
-                if not line:
-                    continue
-                
+        class MCPHTTPHandler(BaseHTTPRequestHandler):
+            def do_OPTIONS(self):
+                """CORS preflight 요청 처리"""
+                self.send_response(200)
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.send_header('Access-Control-Allow-Methods', 'POST, GET, OPTIONS')
+                self.send_header('Access-Control-Allow-Headers', 'Content-Type')
+                self.end_headers()
+            
+            def do_POST(self):
+                """MCP 요청 처리"""
                 try:
-                    request = json.loads(line)
-                    response = await self.handle_request(request)
+                    content_length = int(self.headers.get('Content-Length', 0))
+                    body = self.rfile.read(content_length).decode('utf-8')
+                    request = json.loads(body)
+                    
+                    # 비동기 요청 처리
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                    response = loop.run_until_complete(server_instance.handle_request(request))
+                    loop.close()
                     
                     if "id" in request:
                         response["id"] = request["id"]
                         response["jsonrpc"] = "2.0"
-                        print(json.dumps(response), flush=True)
-                except json.JSONDecodeError:
-                    continue
+                    
+                    # 응답 전송
+                    self.send_response(200)
+                    self.send_header('Content-Type', 'application/json')
+                    self.send_header('Access-Control-Allow-Origin', '*')
+                    self.end_headers()
+                    self.wfile.write(json.dumps(response).encode('utf-8'))
+                    
                 except Exception as e:
                     error_response = {
                         "jsonrpc": "2.0",
                         "error": {"code": -1, "message": str(e)},
                         "id": request.get("id") if 'request' in locals() else None
                     }
-                    print(json.dumps(error_response), flush=True)
-            except Exception:
-                break
+                    self.send_response(500)
+                    self.send_header('Content-Type', 'application/json')
+                    self.send_header('Access-Control-Allow-Origin', '*')
+                    self.end_headers()
+                    self.wfile.write(json.dumps(error_response).encode('utf-8'))
+            
+            def log_message(self, format, *args):
+                """로그 메시지 출력"""
+                sys.stderr.write(f"{self.address_string()} - {format % args}\n")
+        
+        return MCPHTTPHandler
+    
+    def run_http(self, port=8000):
+        """HTTP 서버 실행"""
+        handler = self.create_http_handler()
+        server = HTTPServer(('0.0.0.0', port), handler)
+        print(f"MCP HTTP Server running on port {port}", file=sys.stderr)
+        server.serve_forever()
 
 # MCP 서버 인스턴스
 mcp = SimpleMCPServer("smuchat")
@@ -537,4 +556,6 @@ def default_prompt(message: str) -> list[base.Message]:
     ]
 
 if __name__ == "__main__":
-    asyncio.run(mcp.run())
+    # 환경변수에서 포트 가져오기 (smithery는 PORT 환경변수 사용)
+    port = int(os.getenv("PORT", "8000"))
+    mcp.run_http(port)
