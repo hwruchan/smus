@@ -76,6 +76,8 @@ class mcp:
 @app.route('/<path:path>', methods=['POST', 'OPTIONS', 'GET'])
 def handle_mcp_request(path=''):
     """MCP 요청 처리"""
+    print(f"[MCP] Request: {request.method} {request.path} | Tools: {len(_tools)}, Prompts: {len(_prompts)}", flush=True)
+    
     if request.method == 'OPTIONS':
         return '', 200
     
@@ -84,7 +86,9 @@ def handle_mcp_request(path=''):
             "name": "smuchat",
             "version": "1.0.0",
             "description": "SMU MCP Server",
-            "status": "running"
+            "status": "running",
+            "tools": len(_tools),
+            "prompts": len(_prompts)
         })
     
     try:
