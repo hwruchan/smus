@@ -498,7 +498,7 @@ def delete_smu_schedule_by_content(content_keyword: str) -> dict:
 
 # ---- 기본 프롬프트(어제/내일 계산 버그 수정) ----
 @mcp.prompt()
-def default_prompt(message: str) -> list[base.Message]:
+def default_prompt(message: str) -> list:
     tz = ZoneInfo("Asia/Seoul")
     now = datetime.now(tz)
     today_str = now.strftime("%Y-%m-%d")
