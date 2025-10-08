@@ -378,7 +378,7 @@ def query_special_keywords(keyword: str) -> dict:
     }
 
     if keyword in responses:
-    return responses[keyword]
+        return responses[keyword]
     else:
         return f"'{keyword}'에 대한 정보가 없습니다."
 
