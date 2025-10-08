@@ -552,23 +552,24 @@ def default_prompt(message: str) -> list:
         }
     ]
 
+# 환경변수에서 포트 가져오기 (smithery는 PORT 환경변수 사용)
+port = int(os.getenv("PORT", "8000"))
+print(f"[MCP] Module loaded. Tools: {len(_tools)}, Prompts: {len(_prompts)}", flush=True)
+print(f"[MCP] Tool names: {list(_tools.keys())}", flush=True)
+print(f"[MCP] Prompt names: {list(_prompts.keys())}", flush=True)
+
+# Flask 앱에 요청 로깅 추가
+@app.before_request
+def log_request():
+    print(f"[MCP] Incoming {request.method} {request.path}", flush=True)
+
+@app.after_request  
+def log_response(response):
+    print(f"[MCP] Response {response.status_code}", flush=True)
+    return response
+
 if __name__ == "__main__":
-    # 환경변수에서 포트 가져오기 (smithery는 PORT 환경변수 사용)
-    port = int(os.getenv("PORT", "8000"))
-    print(f"[MCP] Starting server on port {port}", flush=True)
-    print(f"[MCP] Available tools: {list(_tools.keys())}", flush=True)
-    print(f"[MCP] Available prompts: {list(_prompts.keys())}", flush=True)
-    
-    # Flask 앱에 요청 로깅 추가
-    @app.before_request
-    def log_request():
-        print(f"[MCP] Incoming {request.method} {request.path}", flush=True)
-    
-    @app.after_request  
-    def log_response(response):
-        print(f"[MCP] Response {response.status_code}", flush=True)
-        return response
-    
+    print(f"[MCP] Starting server on port {port}...", flush=True)
     try:
         app.run(host='0.0.0.0', port=port, debug=False, use_reloader=False)
     except Exception as e:
