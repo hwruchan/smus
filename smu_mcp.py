@@ -1,11 +1,8 @@
 import json
-import sys
-import asyncio
-from typing import Any, Dict, List
 import os
 import pymysql
-from http.server import HTTPServer, BaseHTTPRequestHandler
-from urllib.parse import urlparse, parse_qs
+from flask import Flask, request, jsonify
+from flask_cors import CORS
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 from pymysql.cursors import DictCursor
@@ -51,140 +48,127 @@ def _query_meals_by_date_category(date_iso: str, category: str) -> list[dict]:
     finally:
         conn.close()
 
-# 간단한 MCP 서버 구현
-class SimpleMCPServer:
-    def __init__(self, name: str):
-        self.name = name
-        self.tools = {}
-        self.prompts = {}
+# Flask 앱 및 MCP 서버 설정
+app = Flask(__name__)
+CORS(app)  # 모든 origin 허용
+
+# 도구와 프롬프트 저장소
+_tools = {}
+_prompts = {}
+
+class mcp:
+    """MCP 데코레이터 클래스"""
+    @staticmethod
+    def tool():
+        def decorator(func):
+            _tools[func.__name__] = func
+            return func
+        return decorator
     
-    def tool(self, func):
-        self.tools[func.__name__] = func
-        return func
+    @staticmethod
+    def prompt():
+        def decorator(func):
+            _prompts[func.__name__] = func
+            return func
+        return decorator
+
+@app.route('/', methods=['POST', 'OPTIONS'])
+def handle_mcp_request():
+    """MCP 요청 처리"""
+    if request.method == 'OPTIONS':
+        return '', 200
     
-    def prompt(self, func):
-        self.prompts[func.__name__] = func
-        return func
-    
-    async def handle_request(self, request: Dict[str, Any]) -> Dict[str, Any]:
-        method = request.get("method")
-        params = request.get("params", {})
+    try:
+        req = request.get_json()
+        method = req.get('method')
+        params = req.get('params', {})
+        req_id = req.get('id')
         
-        if method == "tools/list":
-            return {
+        if method == 'initialize':
+            response = {
+                "protocolVersion": "2024-11-05",
+                "capabilities": {
+                    "tools": {},
+                    "prompts": {}
+                },
+                "serverInfo": {
+                    "name": "smuchat",
+                    "version": "1.0.0"
+                }
+            }
+        elif method == 'tools/list':
+            response = {
                 "tools": [
                     {
                         "name": name,
                         "description": func.__doc__ or "",
-                        "inputSchema": {"type": "object", "properties": {}, "required": []}
+                        "inputSchema": {
+                            "type": "object",
+                            "properties": {},
+                            "required": []
+                        }
                     }
-                    for name, func in self.tools.items()
+                    for name, func in _tools.items()
                 ]
             }
-        elif method == "tools/call":
-            tool_name = params.get("name")
-            arguments = params.get("arguments", {})
+        elif method == 'tools/call':
+            tool_name = params.get('name')
+            arguments = params.get('arguments', {})
             
-            if tool_name in self.tools:
+            if tool_name in _tools:
                 try:
-                    result = self.tools[tool_name](**arguments)
-                    return {
-                        "content": [{"type": "text", "text": json.dumps(result, ensure_ascii=False)}]
+                    result = _tools[tool_name](**arguments)
+                    response = {
+                        "content": [
+                            {
+                                "type": "text",
+                                "text": json.dumps(result, ensure_ascii=False)
+                            }
+                        ]
                     }
                 except Exception as e:
-                    return {"error": {"code": -1, "message": str(e)}}
+                    response = {"error": {"code": -1, "message": str(e)}}
             else:
-                return {"error": {"code": -1, "message": f"Tool '{tool_name}' not found"}}
-        elif method == "prompts/list":
-            return {
+                response = {"error": {"code": -1, "message": f"Tool '{tool_name}' not found"}}
+        elif method == 'prompts/list':
+            response = {
                 "prompts": [
                     {
                         "name": name,
                         "description": func.__doc__ or "",
                         "arguments": []
                     }
-                    for name, func in self.prompts.items()
+                    for name, func in _prompts.items()
                 ]
             }
-        elif method == "prompts/get":
-            prompt_name = params.get("name")
-            arguments = params.get("arguments", {})
+        elif method == 'prompts/get':
+            prompt_name = params.get('name')
+            arguments = params.get('arguments', {})
             
-            if prompt_name in self.prompts:
+            if prompt_name in _prompts:
                 try:
-                    result = self.prompts[prompt_name](**arguments)
-                    return {"messages": result}
+                    result = _prompts[prompt_name](**arguments)
+                    response = {"messages": result}
                 except Exception as e:
-                    return {"error": {"code": -1, "message": str(e)}}
+                    response = {"error": {"code": -1, "message": str(e)}}
             else:
-                return {"error": {"code": -1, "message": f"Prompt '{prompt_name}' not found"}}
+                response = {"error": {"code": -1, "message": f"Prompt '{prompt_name}' not found"}}
         else:
-            return {"error": {"code": -1, "message": f"Unknown method: {method}"}}
-    
-    def create_http_handler(self):
-        """HTTP 핸들러 클래스 생성"""
-        server_instance = self
+            response = {"error": {"code": -1, "message": f"Unknown method: {method}"}}
         
-        class MCPHTTPHandler(BaseHTTPRequestHandler):
-            def do_OPTIONS(self):
-                """CORS preflight 요청 처리"""
-                self.send_response(200)
-                self.send_header('Access-Control-Allow-Origin', '*')
-                self.send_header('Access-Control-Allow-Methods', 'POST, GET, OPTIONS')
-                self.send_header('Access-Control-Allow-Headers', 'Content-Type')
-                self.end_headers()
-            
-            def do_POST(self):
-                """MCP 요청 처리"""
-                try:
-                    content_length = int(self.headers.get('Content-Length', 0))
-                    body = self.rfile.read(content_length).decode('utf-8')
-                    request = json.loads(body)
-                    
-                    # 비동기 요청 처리
-                    loop = asyncio.new_event_loop()
-                    asyncio.set_event_loop(loop)
-                    response = loop.run_until_complete(server_instance.handle_request(request))
-                    loop.close()
-                    
-                    if "id" in request:
-                        response["id"] = request["id"]
-                        response["jsonrpc"] = "2.0"
-                    
-                    # 응답 전송
-                    self.send_response(200)
-                    self.send_header('Content-Type', 'application/json')
-                    self.send_header('Access-Control-Allow-Origin', '*')
-                    self.end_headers()
-                    self.wfile.write(json.dumps(response).encode('utf-8'))
-                    
-                except Exception as e:
-                    error_response = {
-                        "jsonrpc": "2.0",
-                        "error": {"code": -1, "message": str(e)},
-                        "id": request.get("id") if 'request' in locals() else None
-                    }
-                    self.send_response(500)
-                    self.send_header('Content-Type', 'application/json')
-                    self.send_header('Access-Control-Allow-Origin', '*')
-                    self.end_headers()
-                    self.wfile.write(json.dumps(error_response).encode('utf-8'))
-            
-            def log_message(self, format, *args):
-                """로그 메시지 출력"""
-                sys.stderr.write(f"{self.address_string()} - {format % args}\n")
+        # 응답에 id 추가
+        if req_id is not None:
+            response["id"] = req_id
+        response["jsonrpc"] = "2.0"
         
-        return MCPHTTPHandler
+        return jsonify(response)
     
-    def run_http(self, port=8000):
-        """HTTP 서버 실행"""
-        handler = self.create_http_handler()
-        server = HTTPServer(('0.0.0.0', port), handler)
-        print(f"MCP HTTP Server running on port {port}", file=sys.stderr)
-        server.serve_forever()
-
-# MCP 서버 인스턴스
-mcp = SimpleMCPServer("smuchat")
+    except Exception as e:
+        return jsonify({
+            "jsonrpc": "2.0",
+            "error": {"code": -1, "message": str(e)},
+            "id": req.get('id') if 'req' in locals() else None
+        }), 500
 
 
 KST = ZoneInfo("Asia/Seoul")
@@ -558,4 +542,5 @@ def default_prompt(message: str) -> list[base.Message]:
 if __name__ == "__main__":
     # 환경변수에서 포트 가져오기 (smithery는 PORT 환경변수 사용)
     port = int(os.getenv("PORT", "8000"))
-    mcp.run_http(port)
+    print(f"Starting MCP server on port {port}...", flush=True)
+    app.run(host='0.0.0.0', port=port, debug=False)
