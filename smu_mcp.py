@@ -1,5 +1,19 @@
-from mcp.server.fastmcp import FastMCP
-from mcp.server.fastmcp.prompts import base
+from mcp.server import Server
+from mcp.server.models import InitializationOptions
+from mcp.server.prompts import Prompt
+from mcp.server.tools import Tool
+from mcp.types import (
+    CallToolRequest,
+    CallToolResult,
+    ListPromptsRequest,
+    ListPromptsResult,
+    ListToolsRequest,
+    ListToolsResult,
+    Prompt as MCPPrompt,
+    PromptMessage,
+    TextContent,
+    Tool as MCPTool,
+)
 import os
 import pandas as pd
 import pymysql
@@ -18,7 +32,7 @@ DB_PORT = int(os.getenv("DB_PORT", "3306"))
 def _query_meals_by_date_category(date_iso: str, category: str) -> list[dict]:
     """
     내부 헬퍼: YYYY-MM-DD(iso) 날짜와 카테고리(breakfast/lunch/dinner)로 smu_meals 조회
-    - date 컬럼이 DATE/DATETIME이거나 문자열(텍스트)인 경우 모두 대응
+    - date 컬럼이 DATE/DATETIME이거나 문자열(텍스트)인 경우 모두 대응.
     """
     conn = pymysql.connect(
         host=DB_HOST, user=DB_USER, password=DB_PASSWORD,
@@ -48,8 +62,8 @@ def _query_meals_by_date_category(date_iso: str, category: str) -> list[dict]:
     finally:
         conn.close()
 
-# FastMCP 서버
-mcp = FastMCP("smuchat")
+# MCP 서버
+server = Server("smuchat")
 
 
 KST = ZoneInfo("Asia/Seoul")
@@ -97,7 +111,190 @@ def _coerce_to_kst(dt_str: str) -> datetime:
 
 
     
-@mcp.tool()
+@server.list_tools()
+async def handle_list_tools() -> ListToolsResult:
+    """List available tools."""
+    return ListToolsResult(
+        tools=[
+            MCPTool(
+                name="now_kr",
+                description="Return current date/time info in Asia/Seoul (KST, UTC+9).",
+                inputSchema={
+                    "type": "object",
+                    "properties": {},
+                    "required": []
+                }
+            ),
+            MCPTool(
+                name="query_smu_meals_by_date_category",
+                description="YYYY-MM-DD 날짜와 카테고리로 smu_meals를 조회한다.",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "date_iso": {
+                            "type": "string",
+                            "description": "'2025-08-27' 같은 ISO 날짜 문자열"
+                        },
+                        "category": {
+                            "type": "string",
+                            "description": "'breakfast' | 'lunch' | 'dinner'",
+                            "default": "lunch"
+                        }
+                    },
+                    "required": ["date_iso"]
+                }
+            ),
+            MCPTool(
+                name="query_smu_meals_by_keyword",
+                description="'meal' 텍스트 등에서 키워드 검색 (보조 용도)",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "keyword": {
+                            "type": "string",
+                            "description": "검색할 키워드"
+                        }
+                    },
+                    "required": ["keyword"]
+                }
+            ),
+            MCPTool(
+                name="query_smu_notices_by_keyword",
+                description="'smu_notices' 테이블에서 'title' 컬럼에 특정 키워드를 포함하는 행을 조회하여 결과를 반환하는 도구.",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "keyword": {
+                            "type": "string",
+                            "description": "'title' 컬럼에서 찾을 키워드"
+                        }
+                    },
+                    "required": ["keyword"]
+                }
+            ),
+            MCPTool(
+                name="query_smu_exam",
+                description="smu_exam 테이블에서 subject_name, professor 조건을 조합해 검색.",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "keyword": {
+                            "type": "string",
+                            "description": "과목명 키워드"
+                        },
+                        "professor": {
+                            "type": "string",
+                            "description": "교수명 (선택사항)"
+                        }
+                    },
+                    "required": ["keyword"]
+                }
+            ),
+            MCPTool(
+                name="query_smu_schedule_by_keyword",
+                description="'smu_schedule' 테이블에서 'content' 컬럼에 특정 키워드를 포함하는 행을 조회하여 결과를 반환하는 도구.",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "keyword": {
+                            "type": "string",
+                            "description": "'content' 컬럼에서 찾을 키워드"
+                        }
+                    },
+                    "required": ["keyword"]
+                }
+            ),
+            MCPTool(
+                name="query_special_keywords",
+                description="특정 키워드에 대해 미리 정의된 응답을 반환하는 도구.",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "keyword": {
+                            "type": "string",
+                            "description": "사용자가 입력한 키워드"
+                        }
+                    },
+                    "required": ["keyword"]
+                }
+            ),
+            MCPTool(
+                name="add_smu_schedule_structured",
+                description="Insert a schedule row into `smu_schedule` with structured inputs.",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "start_datetime": {
+                            "type": "string",
+                            "description": "e.g., '2025-10-21', '2025-10-21 13:30', or ISO-like."
+                        },
+                        "content": {
+                            "type": "string",
+                            "description": "schedule text/content."
+                        },
+                        "end_datetime": {
+                            "type": "string",
+                            "description": "same formats as start. If omitted, equals start."
+                        }
+                    },
+                    "required": ["start_datetime", "content"]
+                }
+            ),
+            MCPTool(
+                name="delete_smu_schedule_by_content",
+                description="내용 키워드로 일정을 삭제하는 도구.",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "content_keyword": {
+                            "type": "string",
+                            "description": "삭제할 일정의 내용에 포함된 키워드"
+                        }
+                    },
+                    "required": ["content_keyword"]
+                }
+            )
+        ]
+    )
+
+@server.call_tool()
+async def handle_call_tool(name: str, arguments: dict) -> CallToolResult:
+    """Handle tool calls."""
+    if name == "now_kr":
+        result = now_kr()
+    elif name == "query_smu_meals_by_date_category":
+        result = query_smu_meals_by_date_category(
+            arguments.get("date_iso"),
+            arguments.get("category", "lunch")
+        )
+    elif name == "query_smu_meals_by_keyword":
+        result = query_smu_meals_by_keyword(arguments.get("keyword"))
+    elif name == "query_smu_notices_by_keyword":
+        result = query_smu_notices_by_keyword(arguments.get("keyword"))
+    elif name == "query_smu_exam":
+        result = query_smu_exam(
+            arguments.get("keyword"),
+            arguments.get("professor")
+        )
+    elif name == "query_smu_schedule_by_keyword":
+        result = query_smu_schedule_by_keyword(arguments.get("keyword"))
+    elif name == "query_special_keywords":
+        result = query_special_keywords(arguments.get("keyword"))
+    elif name == "add_smu_schedule_structured":
+        result = add_smu_schedule_structured(
+            arguments.get("start_datetime"),
+            arguments.get("content"),
+            arguments.get("end_datetime")
+        )
+    elif name == "delete_smu_schedule_by_content":
+        result = delete_smu_schedule_by_content(arguments.get("content_keyword"))
+    else:
+        raise ValueError(f"Unknown tool: {name}")
+    
+    return CallToolResult(
+        content=[TextContent(type="text", text=str(result))]
+    )
+
 def now_kr() -> dict:
     """Return current date/time info in Asia/Seoul (KST, UTC+9)."""
     tz = ZoneInfo("Asia/Seoul")
@@ -110,7 +307,6 @@ def now_kr() -> dict:
         "tz": "Asia/Seoul (KST, UTC+9)",
     }
 
-@mcp.tool()
 def query_smu_meals_by_date_category(date_iso: str, category: str = "lunch") -> dict:
     """
     YYYY-MM-DD 날짜와 카테고리로 smu_meals를 조회한다.
@@ -124,7 +320,6 @@ def query_smu_meals_by_date_category(date_iso: str, category: str = "lunch") -> 
     return rows  # 이미 list[dict]
 
 # (기존) 키워드 검색 도구가 필요하면 이 버전처럼 안전하게 수정
-@mcp.tool()
 def query_smu_meals_by_keyword(keyword: str) -> dict:
     """
     'meal' 텍스트 등에서 키워드 검색 (보조 용도)
@@ -141,7 +336,6 @@ def query_smu_meals_by_keyword(keyword: str) -> dict:
     finally:
         conn.close()
 
-@mcp.tool()
 def query_smu_notices_by_keyword(keyword: str) -> dict:
     """
     'smu_notices' 테이블에서 'title' 컬럼에 특정 키워드를 포함하는 행을 조회하여 결과를 반환하는 도구.
@@ -158,17 +352,19 @@ def query_smu_notices_by_keyword(keyword: str) -> dict:
             user=DB_USER,
             password=DB_PASSWORD,
             database=DB_NAME,
-            port=DB_PORT
+            port=DB_PORT,
+            cursorclass=DictCursor,
+            charset="utf8mb4"
         )
-    cursor = conn.cursor()
-
-        # 쿼리 작성: 'title' 컬럼에서 키워드를 포함하는 행을 찾는 쿼리
-    sql = f"SELECT * FROM smu_notices WHERE title LIKE %s"
-    cursor.execute(sql, (f"%{keyword}%",))
-        
-    return cursor.fetchall()
+    try:
+        with conn.cursor() as cursor:
+            # 쿼리 작성: 'title' 컬럼에서 키워드를 포함하는 행을 찾는 쿼리
+            sql = "SELECT * FROM smu_notices WHERE title LIKE %s"
+            cursor.execute(sql, (f"%{keyword}%",))
+            return cursor.fetchall()
+    finally:
+        conn.close()
     
-@mcp.tool()
 def query_smu_exam(keyword: str, professor: str | None = None) -> list[dict]:
     """
     smu_exam 테이블에서 subject_name, professor 조건을 조합해 검색.
@@ -207,7 +403,6 @@ def query_smu_exam(keyword: str, professor: str | None = None) -> list[dict]:
     finally:
         conn.close()
         
-@mcp.tool()
 def query_smu_schedule_by_keyword(keyword: str) -> dict:
     """
     'smu_schedule' 테이블에서 'content' 컬럼에 특정 키워드를 포함하는 행을 조회하여 결과를 반환하는 도구.
@@ -224,17 +419,19 @@ def query_smu_schedule_by_keyword(keyword: str) -> dict:
             user=DB_USER,
             password=DB_PASSWORD,
             database=DB_NAME,
-            port=DB_PORT
+            port=DB_PORT,
+            cursorclass=DictCursor,
+            charset="utf8mb4"
         )
-    cursor = conn.cursor()
+    try:
+        with conn.cursor() as cursor:
+            # 쿼리 작성: 'content' 컬럼에서 키워드를 포함하는 행을 찾는 쿼리
+            sql = "SELECT * FROM smu_schedule WHERE content LIKE %s"
+            cursor.execute(sql, (f"%{keyword}%",))
+            return cursor.fetchall()
+    finally:
+        conn.close()
 
-        # 쿼리 작성: 'content' 컬럼에서 키워드를 포함하는 행을 찾는 쿼리
-    sql = f"SELECT * FROM smu_schedule WHERE content LIKE %s"
-    cursor.execute(sql, (f"%{keyword}%",))
-        
-    return cursor.fetchall()
-
-@mcp.tool()
 def query_special_keywords(keyword: str) -> dict:
     """
     특정 키워드에 대해 미리 정의된 응답을 반환하는 도구.
@@ -252,9 +449,11 @@ def query_special_keywords(keyword: str) -> dict:
         "김재관": "김재관은 그 뭐냐 그거입니다"
     }
 
+    if keyword in responses:
     return responses[keyword]
+    else:
+        return f"'{keyword}'에 대한 정보가 없습니다."
 
-@mcp.tool()
 def add_smu_schedule_structured(
     start_datetime: str,
     content: str,
@@ -317,7 +516,6 @@ def add_smu_schedule_structured(
     }
 
 
-@mcp.tool()
 def delete_smu_schedule_by_content(content_keyword: str) -> dict:
     """
     내용 키워드로 일정을 삭제하는 도구.
@@ -369,8 +567,35 @@ def delete_smu_schedule_by_content(content_keyword: str) -> dict:
 
 
 # ---- 기본 프롬프트(어제/내일 계산 버그 수정) ----
-@mcp.prompt()
-def default_prompt(message: str) -> list[base.Message]:
+@server.list_prompts()
+async def handle_list_prompts() -> ListPromptsResult:
+    """List available prompts."""
+    return ListPromptsResult(
+        prompts=[
+            MCPPrompt(
+                name="default_prompt",
+                description="Default prompt for SMU MCP server",
+                arguments=[
+                    {
+                        "name": "message",
+                        "description": "User message",
+                        "required": True
+                    }
+                ]
+            )
+        ]
+    )
+
+@server.get_prompt()
+async def handle_get_prompt(name: str, arguments: dict) -> list[PromptMessage]:
+    """Get prompt content."""
+    if name == "default_prompt":
+        message = arguments.get("message", "")
+        return default_prompt(message)
+    else:
+        raise ValueError(f"Unknown prompt: {name}")
+
+def default_prompt(message: str) -> list[PromptMessage]:
     tz = ZoneInfo("Asia/Seoul")
     now = datetime.now(tz)
     today_str = now.strftime("%Y-%m-%d")
@@ -380,8 +605,11 @@ def default_prompt(message: str) -> list[base.Message]:
     tomorrow_str = (now + timedelta(days=1)).strftime("%Y-%m-%d")
 
     return [
-        base.AssistantMessage(
-            "You are a smart agent with an ability to use tools.\n"
+        PromptMessage(
+            role="assistant",
+            content=TextContent(
+                type="text",
+                text="You are a smart agent with an ability to use tools.\n"
             "If you don't have any tools to use for what the user asked, please think and judge for yourself and answer.\n"
             "Before answering any question that depends on dates or times, call the `now_kr` tool to confirm the current date/time in Asia/Seoul.\n"
             "Always consider variations of spacing when interpreting keywords. Treat joined words and separated words as equivalent (e.g., 'lunchmenu' and 'lunch menu', '점심메뉴' and '점심 메뉴'). Automatically account for both forms when extracting or matching keywords.\n"
@@ -395,11 +623,33 @@ def default_prompt(message: str) -> list[base.Message]:
             "1) Call `now_kr` (get date)\n"
             "2) Then call `query_smu_meals_by_date_category(date_iso, category)`\n"
             "When data includes URLs, always include them in the answer.\n"
-            "Convert the user’s natural language into structured inputs for the tool:\n"
+                "Convert the user's natural language into structured inputs for the tool:\n"
             "start_datetime and optional end_datetime must be absolute KST datetimes (YYYY-MM-DD or ISO-like), and content must be a concise title/description. If only one datetime is present, set end_datetime = start_datetime.\n"
+            )
         ),
-        base.UserMessage(message),
+        PromptMessage(
+            role="user",
+            content=TextContent(type="text", text=message)
+        )
     ]
 
 if __name__ == "__main__":
-    mcp.run(transport="stdio")
+    import asyncio
+    from mcp.server.stdio import stdio_server
+    
+    async def main():
+        async with stdio_server() as (read_stream, write_stream):
+            await server.run(
+                read_stream,
+                write_stream,
+                InitializationOptions(
+                    server_name="smuchat",
+                    server_version="1.0.0",
+                    capabilities=server.get_capabilities(
+                        notification_options=None,
+                        experimental_capabilities=None,
+                    ),
+                ),
+            )
+    
+    asyncio.run(main())
