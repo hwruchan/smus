@@ -1,4 +1,0 @@
-# MCP server dependencies
-mcp-server-fastmcp
-pandas
-pymysql
