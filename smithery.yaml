@@ -2,8 +2,7 @@
 
 startCommand:
   type: stdio
-  commandFunction:
-    |-
+  commandFunction: |-
     (config) => ({
       command: 'python3',
       args: ['solo_server.py'],
