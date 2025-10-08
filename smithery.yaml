@@ -2,19 +2,12 @@
 
 startCommand:
   type: stdio
-  commandFunction: |-
-    (config) => ({
-      command: 'python3',
-      args: ['solo_server.py'],
-      env: {
-        DB_HOST: 'oneteam-db.chigywqq0qt3.ap-northeast-2.rds.amazonaws.com',
-        DB_USER: 'admin',
-        DB_PASSWORD: 'Oneteam2025!',
-        DB_NAME: 'oneteam_DB',
-        DB_PORT: '3306'
-      }
-    })
+  commandFunction:
+    # A JS function that produces the CLI command based on the given config to start the MCP on stdio.
+    |-
+    (config) => ({ command: 'python', args: ['solo_server.py'], env: {} })
   configSchema:
+    # JSON Schema defining the configuration options for the MCP.
     type: object
-    properties: {}
+    description: No configuration needed
   exampleConfig: {}
