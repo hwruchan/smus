@@ -1,9 +1,0 @@
-{
-    "solo_server": {
-        "command": "python",
-        "args": ["-u","C:/Users/jeongchan/iCloudDrive/iCloud~md~obsidian/obsidian/Activity/Graduate/disc/lastdance1008.py"],
-        "cwd":  "C:/Users/jeongchan/iCloudDrive/iCloud~md~obsidian/obsidian/Activity/Graduate/disc",
-        "transport": "stdio"
-    }
-}
-
