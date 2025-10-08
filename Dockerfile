@@ -16,4 +16,4 @@ COPY solo_server.py /app/solo_server.py
 RUN pip install --no-cache-dir mcp pandas pymysql
 
 # Set entrypoint
-ENTRYPOINT ["python", "solo_server.py"]
+ENTRYPOINT ["python", "smu_mcp.py"]
