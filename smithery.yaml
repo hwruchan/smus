@@ -2,6 +2,7 @@
 
 runtime: python
 startCommand:
+  type: http
   command: python3
   args:
     - smu_mcp.py
