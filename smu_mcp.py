@@ -1,7 +1,8 @@
-from mcp.server.fastmcp import FastMCP
-from mcp.server.fastmcp.prompts import base
+import json
+import sys
+import asyncio
+from typing import Any, Dict, List
 import os
-import pandas as pd
 import pymysql
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
@@ -48,8 +49,123 @@ def _query_meals_by_date_category(date_iso: str, category: str) -> list[dict]:
     finally:
         conn.close()
 
-# FastMCP 서버
-mcp = FastMCP("smuchat")
+# 간단한 MCP 서버 구현
+class SimpleMCPServer:
+    def __init__(self, name: str):
+        self.name = name
+        self.tools = {}
+        self.prompts = {}
+    
+    def tool(self, func):
+        self.tools[func.__name__] = func
+        return func
+    
+    def prompt(self, func):
+        self.prompts[func.__name__] = func
+        return func
+    
+    async def handle_request(self, request: Dict[str, Any]) -> Dict[str, Any]:
+        method = request.get("method")
+        params = request.get("params", {})
+        
+        if method == "tools/list":
+            return {
+                "tools": [
+                    {
+                        "name": name,
+                        "description": func.__doc__ or "",
+                        "inputSchema": {"type": "object", "properties": {}, "required": []}
+                    }
+                    for name, func in self.tools.items()
+                ]
+            }
+        elif method == "tools/call":
+            tool_name = params.get("name")
+            arguments = params.get("arguments", {})
+            
+            if tool_name in self.tools:
+                try:
+                    result = self.tools[tool_name](**arguments)
+                    return {
+                        "content": [{"type": "text", "text": json.dumps(result, ensure_ascii=False)}]
+                    }
+                except Exception as e:
+                    return {"error": {"code": -1, "message": str(e)}}
+            else:
+                return {"error": {"code": -1, "message": f"Tool '{tool_name}' not found"}}
+        elif method == "prompts/list":
+            return {
+                "prompts": [
+                    {
+                        "name": name,
+                        "description": func.__doc__ or "",
+                        "arguments": []
+                    }
+                    for name, func in self.prompts.items()
+                ]
+            }
+        elif method == "prompts/get":
+            prompt_name = params.get("name")
+            arguments = params.get("arguments", {})
+            
+            if prompt_name in self.prompts:
+                try:
+                    result = self.prompts[prompt_name](**arguments)
+                    return {"messages": result}
+                except Exception as e:
+                    return {"error": {"code": -1, "message": str(e)}}
+            else:
+                return {"error": {"code": -1, "message": f"Prompt '{prompt_name}' not found"}}
+        else:
+            return {"error": {"code": -1, "message": f"Unknown method: {method}"}}
+    
+    async def run(self):
+        # 초기화 메시지 전송
+        init_message = {
+            "jsonrpc": "2.0",
+            "method": "initialize",
+            "params": {
+                "protocolVersion": "2024-11-05",
+                "capabilities": {"tools": {}, "prompts": {}},
+                "clientInfo": {"name": "smithery", "version": "1.0.0"}
+            },
+            "id": 1
+        }
+        print(json.dumps(init_message), flush=True)
+        
+        # 메시지 처리
+        while True:
+            try:
+                line = await asyncio.get_event_loop().run_in_executor(None, sys.stdin.readline)
+                if not line:
+                    break
+                
+                line = line.strip()
+                if not line:
+                    continue
+                
+                try:
+                    request = json.loads(line)
+                    response = await self.handle_request(request)
+                    
+                    if "id" in request:
+                        response["id"] = request["id"]
+                        response["jsonrpc"] = "2.0"
+                        print(json.dumps(response), flush=True)
+                except json.JSONDecodeError:
+                    continue
+                except Exception as e:
+                    error_response = {
+                        "jsonrpc": "2.0",
+                        "error": {"code": -1, "message": str(e)},
+                        "id": request.get("id") if 'request' in locals() else None
+                    }
+                    print(json.dumps(error_response), flush=True)
+            except Exception:
+                break
+
+# MCP 서버 인스턴스
+mcp = SimpleMCPServer("smuchat")
 
 
 KST = ZoneInfo("Asia/Seoul")
@@ -389,26 +505,36 @@ def default_prompt(message: str) -> list[base.Message]:
     tomorrow_str = (now + timedelta(days=1)).strftime("%Y-%m-%d")
 
     return [
-        base.AssistantMessage(
-            "You are a smart agent with an ability to use tools.\n"
-            "If you don't have any tools to use for what the user asked, please think and judge for yourself and answer.\n"
-            "Before answering any question that depends on dates or times, call the `now_kr` tool to confirm the current date/time in Asia/Seoul.\n"
-            "Always consider variations of spacing when interpreting keywords. Treat joined words and separated words as equivalent (e.g., 'lunchmenu' and 'lunch menu', '점심메뉴' and '점심 메뉴'). Automatically account for both forms when extracting or matching keywords.\n"
-            "When reasoning about any dates or times, you MUST anchor to the following clock:\n"
-            f"- Today: {today_str} ({weekday_str}), Current time: {time_str}, Timezone: Asia/Seoul (KST, UTC+9).\n"
-            "Interpret relative terms strictly as:\n"
-            f"- 'today/오늘' = {today_str}\n"
-            f"- 'yesterday/어제' = {yesterday_str}\n"
-            f"- 'tomorrow/내일' = {tomorrow_str}\n"
-            "If the user asks for SMU meals for today or a specific date, prefer:\n"
-            "1) Call `now_kr` (get date)\n"
-            "2) Then call `query_smu_meals_by_date_category(date_iso, category)`\n"
-            "When data includes URLs, always include them in the answer.\n"
-            "Convert the user's natural language into structured inputs for the tool:\n"
-            "start_datetime and optional end_datetime must be absolute KST datetimes (YYYY-MM-DD or ISO-like), and content must be a concise title/description. If only one datetime is present, set end_datetime = start_datetime.\n"
-        ),
-        base.UserMessage(message),
+        {
+            "role": "assistant",
+            "content": {
+                "type": "text",
+                "text": "You are a smart agent with an ability to use tools.\n"
+                "If you don't have any tools to use for what the user asked, please think and judge for yourself and answer.\n"
+                "Before answering any question that depends on dates or times, call the `now_kr` tool to confirm the current date/time in Asia/Seoul.\n"
+                "Always consider variations of spacing when interpreting keywords. Treat joined words and separated words as equivalent (e.g., 'lunchmenu' and 'lunch menu', '점심메뉴' and '점심 메뉴'). Automatically account for both forms when extracting or matching keywords.\n"
+                "When reasoning about any dates or times, you MUST anchor to the following clock:\n"
+                f"- Today: {today_str} ({weekday_str}), Current time: {time_str}, Timezone: Asia/Seoul (KST, UTC+9).\n"
+                "Interpret relative terms strictly as:\n"
+                f"- 'today/오늘' = {today_str}\n"
+                f"- 'yesterday/어제' = {yesterday_str}\n"
+                f"- 'tomorrow/내일' = {tomorrow_str}\n"
+                "If the user asks for SMU meals for today or a specific date, prefer:\n"
+                "1) Call `now_kr` (get date)\n"
+                "2) Then call `query_smu_meals_by_date_category(date_iso, category)`\n"
+                "When data includes URLs, always include them in the answer.\n"
+                "Convert the user's natural language into structured inputs for the tool:\n"
+                "start_datetime and optional end_datetime must be absolute KST datetimes (YYYY-MM-DD or ISO-like), and content must be a concise title/description. If only one datetime is present, set end_datetime = start_datetime.\n"
+            }
+        },
+        {
+            "role": "user",
+            "content": {
+                "type": "text",
+                "text": message
+            }
+        }
     ]
 
 if __name__ == "__main__":
-    mcp.run(transport="stdio")
+    asyncio.run(mcp.run())
