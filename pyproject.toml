@@ -10,7 +10,6 @@ authors = [
     {name = "SMU Team"}
 ]
 dependencies = [
-    "mcp-server-fastmcp",
     "pandas",
     "pymysql"
 ]
