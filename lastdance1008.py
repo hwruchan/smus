@@ -418,8 +418,8 @@ if __name__ == "__main__":
     import sys
     if len(sys.argv) > 1 and sys.argv[1] == "--http":
         # HTTP 모드로 실행 (Smithery용)
-        # FastMCP는 기본적으로 모든 인터페이스에서 HTTP 서버를 시작
-        mcp.run(transport="http")
+        # FastMCP는 기본적으로 HTTP를 지원합니다
+        mcp.run()
     else:
         # 기본 stdio 모드
         mcp.run(transport="stdio")
