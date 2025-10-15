@@ -418,8 +418,45 @@ if __name__ == "__main__":
     import sys
     if len(sys.argv) > 1 and sys.argv[1] == "--http":
         # HTTP 모드로 실행 (Smithery용)
-        # FastMCP는 기본적으로 HTTP를 지원합니다
-        mcp.run()
+        # FastMCP를 직접 HTTP 서버로 실행
+        import uvicorn
+        from fastapi import FastAPI
+        from fastapi.middleware.cors import CORSMiddleware
+        
+        # FastAPI 앱 생성
+        app = FastAPI(title="SMU Schedule MCP Server")
+        
+        # CORS 설정 (Smithery 접근 허용)
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=["*"],
+            allow_credentials=True,
+            allow_methods=["*"],
+            allow_headers=["*"],
+        )
+        
+        # FastMCP 서버를 직접 실행
+        # FastMCP의 내부 서버를 사용
+        mcp_server = mcp.create_server()
+        
+        # MCP 엔드포인트
+        @app.post("/mcp")
+        async def mcp_endpoint(request):
+            # FastMCP 서버로 요청 전달
+            return await mcp_server.handle_request(await request.json())
+        
+        # 루트 엔드포인트
+        @app.get("/")
+        async def root():
+            return {"message": "SMU Schedule MCP Server", "status": "running"}
+        
+        # 헬스체크
+        @app.get("/health")
+        async def health():
+            return {"status": "healthy"}
+        
+        # 서버 실행
+        uvicorn.run(app, host="0.0.0.0", port=8000)
     else:
         # 기본 stdio 모드
         mcp.run(transport="stdio")
