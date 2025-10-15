@@ -11,25 +11,11 @@ startCommand:
 
 # 환경변수 설정 (사용자가 설정해야 함)
 env:
-  DB_HOST:
-    description: "MySQL database host"
-    required: false
-    default: "oneteam-db.chigywqq0qt3.ap-northeast-2.rds.amazonaws.com"
-  DB_USER:
-    description: "MySQL database user"
-    required: false
-    default: "admin"
-  DB_PASSWORD:
-    description: "MySQL database password"
-    required: true
-  DB_NAME:
-    description: "MySQL database name"
-    required: false
-    default: "oneteam_DB"
-  DB_PORT:
-    description: "MySQL database port"
-    required: false
-    default: "3306"
+  DB_HOST: "oneteam-db.chigywqq0qt3.ap-northeast-2.rds.amazonaws.com"
+  DB_USER: "admin"
+  DB_PASSWORD: ""
+  DB_NAME: "oneteam_DB"
+  DB_PORT: "3306"
 
 # 제공하는 툴들
 tools:
