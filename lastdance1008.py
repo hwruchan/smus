@@ -9,11 +9,24 @@ from pymysql.cursors import DictCursor
 from typing import Optional
 
 # ---- DB 설정 (가능하면 환경변수로 관리 권장) ----
-DB_HOST = os.getenv("DB_HOST", "oneteam-db.chigywqq0qt3.ap-northeast-2.rds.amazonaws.com")
-DB_USER = os.getenv("DB_USER", "admin")
-DB_PASSWORD = os.getenv("DB_PASSWORD", "Oneteam2025!")
-DB_NAME = os.getenv("DB_NAME", "oneteam_DB")
-DB_PORT = int(os.getenv("DB_PORT", "3306"))
+# Smithery에서 URL 파라미터로 전달되는 설정을 환경변수로 변환
+def get_db_config():
+    """Smithery 설정을 환경변수에서 읽어오는 함수"""
+    return {
+        "host": os.getenv("DB_HOST", "oneteam-db.chigywqq0qt3.ap-northeast-2.rds.amazonaws.com"),
+        "user": os.getenv("DB_USER", "admin"),
+        "password": os.getenv("DB_PASSWORD", "Oneteam2025!"),
+        "database": os.getenv("DB_NAME", "oneteam_DB"),
+        "port": int(os.getenv("DB_PORT", "3306"))
+    }
+
+# 전역 DB 설정
+DB_CONFIG = get_db_config()
+DB_HOST = DB_CONFIG["host"]
+DB_USER = DB_CONFIG["user"]
+DB_PASSWORD = DB_CONFIG["password"]
+DB_NAME = DB_CONFIG["database"]
+DB_PORT = DB_CONFIG["port"]
 
 def _query_meals_by_date_category(date_iso: str, category: str) -> list[dict]:
     """
@@ -49,7 +62,7 @@ def _query_meals_by_date_category(date_iso: str, category: str) -> list[dict]:
         conn.close()
 
 # FastMCP 서버
-mcp = FastMCP("smuchat")
+mcp = FastMCP(name="smus", auth=auth, stateless_http=True)
 
 
 KST = ZoneInfo("Asia/Seoul")
@@ -400,6 +413,5 @@ def default_prompt(message: str) -> list[base.Message]:
         ),
         base.UserMessage(message),
     ]
-
 if __name__ == "__main__":
-    mcp.run(transport="stdio")
+        mcp.run(transport="streamable-http")
