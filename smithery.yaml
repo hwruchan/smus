@@ -8,14 +8,35 @@ build:
   dockerBuildPath: "."
 startCommand:
   type: "http"
+  configSchema:
+    type: object
+    required: ["DB_PASSWORD"]
+    properties:
+      DB_HOST:
+        type: string
+        title: "Database Host"
+        description: "MySQL database host"
+        default: "oneteam-db.chigywqq0qt3.ap-northeast-2.rds.amazonaws.com"
+      DB_USER:
+        type: string
+        title: "Database User"
+        description: "MySQL database user"
+        default: "admin"
+      DB_PASSWORD:
+        type: string
+        title: "Database Password"
+        description: "MySQL database password (required)"
+      DB_NAME:
+        type: string
+        title: "Database Name"
+        description: "MySQL database name"
+        default: "oneteam_DB"
+      DB_PORT:
+        type: string
+        title: "Database Port"
+        description: "MySQL database port"
+        default: "3306"
 
-# 환경변수 설정 (사용자가 설정해야 함)
-env:
-  DB_HOST: "oneteam-db.chigywqq0qt3.ap-northeast-2.rds.amazonaws.com"
-  DB_USER: "admin"
-  DB_PASSWORD: "Oneteam2025!"
-  DB_NAME: "oneteam_DB"
-  DB_PORT: "3306"
 
 # 제공하는 툴들
 tools:
@@ -61,4 +82,3 @@ tags:
 
 # 카테고리
 category: productivity
-
