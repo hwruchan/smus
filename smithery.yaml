@@ -13,7 +13,7 @@ startCommand:
 env:
   DB_HOST: "oneteam-db.chigywqq0qt3.ap-northeast-2.rds.amazonaws.com"
   DB_USER: "admin"
-  DB_PASSWORD: ""
+  DB_PASSWORD: "Oneteam2025!"
   DB_NAME: "oneteam_DB"
   DB_PORT: "3306"
 
@@ -61,3 +61,4 @@ tags:
 
 # 카테고리
 category: productivity
+
