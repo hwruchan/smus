@@ -402,4 +402,10 @@ def default_prompt(message: str) -> list[base.Message]:
     ]
 
 if __name__ == "__main__":
-    mcp.run(transport="stdio")
+    import sys
+    if len(sys.argv) > 1 and sys.argv[1] == "--http":
+        # HTTP 모드로 실행 (Smithery용)
+        mcp.run(transport="http", host="0.0.0.0", port=8000)
+    else:
+        # 기본 stdio 모드
+        mcp.run(transport="stdio")
