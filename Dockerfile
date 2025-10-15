@@ -4,4 +4,4 @@ WORKDIR /app
 COPY . .
 RUN pip install -r requirements.txt
 
-CMD ["python", "lastdance1008.py"]
+CMD ["python", "lastdance1008.py", "--http"]
