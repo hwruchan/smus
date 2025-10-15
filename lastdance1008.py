@@ -62,7 +62,7 @@ def _query_meals_by_date_category(date_iso: str, category: str) -> list[dict]:
         conn.close()
 
 # FastMCP 서버
-mcp = FastMCP(name="smus", auth=auth, stateless_http=True)
+mcp = FastMCP(name="smus", stateless_http=True)
 
 
 KST = ZoneInfo("Asia/Seoul")
@@ -415,3 +415,4 @@ def default_prompt(message: str) -> list[base.Message]:
     ]
 if __name__ == "__main__":
         mcp.run(transport="streamable-http")
+
