@@ -61,8 +61,8 @@ def _query_meals_by_date_category(date_iso: str, category: str) -> list[dict]:
     finally:
         conn.close()
 
-# FastMCP 서버
-mcp = FastMCP(name="smus", stateless_http=True)
+# FastMCP 서버 (HTTP/STDIO 겸용)
+mcp = FastMCP(name="smus")
 
 
 KST = ZoneInfo("Asia/Seoul")
@@ -414,5 +414,21 @@ def default_prompt(message: str) -> list[base.Message]:
         base.UserMessage(message),
     ]
 if __name__ == "__main__":
-        mcp.run(transport="streamable-http")
-
+    # Smithery Python custom container 가이드에 따라 PORT 사용, streamable-http로 실행
+    # 참고: https://smithery.ai/docs/migrations/python-custom-container
+    from starlette.middleware.cors import CORSMiddleware
+    import uvicorn
+    
+    app = mcp.streamable_http_app()
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_credentials=True,
+        allow_methods=["GET", "POST", "OPTIONS"],
+        allow_headers=["*"],
+        expose_headers=["mcp-session-id", "mcp-protocol-version"],
+        max_age=86400,
+    )
+    import os
+    port = int(os.environ.get("PORT", 8081))
+    uvicorn.run(app, host="0.0.0.0", port=port, log_level="info")
