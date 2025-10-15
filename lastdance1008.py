@@ -413,18 +413,13 @@ def default_prompt(message: str) -> list[base.Message]:
         ),
         base.UserMessage(message),
     ]
-
 if __name__ == "__main__":
     import sys
     if len(sys.argv) > 1 and sys.argv[1] == "--http":
-        # HTTP 모드로 실행 (Smithery용)
-        # FastMCP는 기본적으로 HTTP를 지원합니다
-        # 환경변수로 HTTP 모드 설정
-        import os
-        os.environ["MCP_TRANSPORT"] = "http"
-        
-        # FastMCP 실행 (HTTP 모드)
-        mcp.run()
+        # HTTP 서버로 실행 (wikidocs 문서 방식)
+        # host와 port 지정 가능
+        mcp.run(transport="http", host="0.0.0.0", port=8000)
     else:
         # 기본 stdio 모드
         mcp.run(transport="stdio")
+
