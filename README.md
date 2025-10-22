@@ -1,5 +1,7 @@
 # SMU Schedule MCP Server
 
+[![smithery badge](https://smithery.ai/badge/@hwruchan/smus)](https://smithery.ai/server/@hwruchan/smus)
+
 A Model Context Protocol (MCP) server for managing SMU (Sangmyung University) schedules, meals, notices, and exam information.
 
 ## Features
@@ -30,6 +32,14 @@ A Model Context Protocol (MCP) server for managing SMU (Sangmyung University) sc
   - `DB_PORT`: MySQL database port (default: 3306)
 
 ## Usage
+
+### Installing via Smithery
+
+To install SMU Schedule MCP Server automatically via [Smithery](https://smithery.ai/server/@hwruchan/smus):
+
+```bash
+npx -y @smithery/cli install @hwruchan/smus
+```
 
 ### Local Development
 
