@@ -221,31 +221,108 @@ def query_smu_exam(keyword: str, professor: str | None = None) -> list[dict]:
         conn.close()
         
 @mcp.tool()
-def query_smu_schedule_by_keyword(keyword: str) -> dict:
+def query_smu_schedule_by_keyword(keyword: str, user_id: Optional[str] = None) -> list[dict]:
     """
     'smu_schedule' 테이블에서 'content' 컬럼에 특정 키워드를 포함하는 행을 조회하여 결과를 반환하는 도구.
+    type에 따라 필터링: 'common'은 모든 사용자에게, 'personal'은 해당 user_id에게만 제공.
     
     Args:
         keyword (str): 'content' 컬럼에서 찾을 키워드.
+        user_id (str, optional): student ID (학번). 제공되면 해당 사용자의 개인 일정도 포함.
         
-        dict: 키워드가 포함된 'content' 컬럼을 가진 행들 반환.
+    Returns:
+        list[dict]: 키워드가 포함된 일정들 (type='common' + user_id가 일치하는 type='personal')
     """
-
-    # MySQL 연결
     conn = pymysql.connect(
-            host=DB_HOST,
-            user=DB_USER,
-            password=DB_PASSWORD,
-            database=DB_NAME,
-            port=DB_PORT
-        )
-    cursor = conn.cursor()
+        host=DB_HOST,
+        user=DB_USER,
+        password=DB_PASSWORD,
+        database=DB_NAME,
+        port=DB_PORT,
+        cursorclass=DictCursor,
+        charset="utf8mb4"
+    )
+    try:
+        with conn.cursor() as cur:
+            if user_id:
+                # user_id가 있으면: common + 해당 user_id의 personal 일정
+                sql = """
+                    SELECT * FROM smu_schedule 
+                    WHERE content LIKE %s 
+                    AND (type = 'common' OR (type = 'personal' AND user_id = %s))
+                    ORDER BY start_date ASC
+                """
+                cur.execute(sql, (f"%{keyword}%", user_id))
+            else:
+                # user_id가 없으면: common 일정만
+                sql = """
+                    SELECT * FROM smu_schedule 
+                    WHERE content LIKE %s AND type = 'common'
+                    ORDER BY start_date ASC
+                """
+                cur.execute(sql, (f"%{keyword}%",))
+            
+            return cur.fetchall()
+    finally:
+        conn.close()
 
-        # 쿼리 작성: 'content' 컬럼에서 키워드를 포함하는 행을 찾는 쿼리
-    sql = f"SELECT * FROM smu_schedule WHERE content LIKE %s"
-    cursor.execute(sql, (f"%{keyword}%",))
+@mcp.tool()
+def query_smu_schedule_by_date(date_keyword: str, user_id: Optional[str] = None) -> list[dict]:
+    """
+    'smu_schedule' 테이블에서 날짜를 키워드로 찾아 해당하는 content를 반환하는 도구.
+    start_date 또는 end_date 컬럼에서 날짜를 검색하여 일치하는 스케줄의 content를 반환합니다.
+    type에 따라 필터링: 'common'은 모든 사용자에게, 'personal'은 해당 user_id에게만 제공.
+    
+    Args:
+        date_keyword (str): 검색할 날짜 키워드 (예: '2025-10-21', '10-21', '10월 21일' 등)
+        user_id (str, optional): student ID (학번). 제공되면 해당 사용자의 개인 일정도 포함.
         
-    return cursor.fetchall()
+    Returns:
+        list[dict]: 날짜와 일치하는 스케줄들 (type='common' + user_id가 일치하는 type='personal')
+    """
+    conn = pymysql.connect(
+        host=DB_HOST,
+        user=DB_USER,
+        password=DB_PASSWORD,
+        database=DB_NAME,
+        port=DB_PORT,
+        cursorclass=DictCursor,
+        charset="utf8mb4"
+    )
+    try:
+        with conn.cursor() as cur:
+            date_pattern = f"%{date_keyword}%"
+            
+            if user_id:
+                # user_id가 있으면: common + 해당 user_id의 personal 일정
+                sql = """
+                    SELECT id, start_date, end_date, content, type, user_id, created_at
+                    FROM smu_schedule 
+                    WHERE (DATE(start_date) LIKE %s 
+                       OR DATE(end_date) LIKE %s
+                       OR start_date LIKE %s 
+                       OR end_date LIKE %s)
+                    AND (type = 'common' OR (type = 'personal' AND user_id = %s))
+                    ORDER BY start_date ASC
+                """
+                cur.execute(sql, (date_pattern, date_pattern, date_pattern, date_pattern, user_id))
+            else:
+                # user_id가 없으면: common 일정만
+                sql = """
+                    SELECT id, start_date, end_date, content, type, user_id, created_at
+                    FROM smu_schedule 
+                    WHERE (DATE(start_date) LIKE %s 
+                       OR DATE(end_date) LIKE %s
+                       OR start_date LIKE %s 
+                       OR end_date LIKE %s)
+                    AND type = 'common'
+                    ORDER BY start_date ASC
+                """
+                cur.execute(sql, (date_pattern, date_pattern, date_pattern, date_pattern))
+            
+            return cur.fetchall()
+    finally:
+        conn.close()
 
 @mcp.tool()
 def query_special_keywords(keyword: str) -> dict:
@@ -259,10 +336,11 @@ def query_special_keywords(keyword: str) -> dict:
         dict: 미리 정의된 응답.
     """
     responses = {
-        "김진석": "김진석은 무서운 ROTC 소속 휴먼과 학생입니다",
-        "맹의현": "맹의현은 별내의 자랑 학교의 지박령입니다",
-        "염다인": "염다인은 유명한 크롤링 장인입니다",
-        "김재관": "김재관은 그 뭐냐 그거입니다"
+        "김진석": "군인이 될 사람이다.",
+        "맹의현": "잘 먹고 다닐 사람이다.",
+        "염다인": "빵집 사장이 될 사람이다.",
+        "김재관": "약간 신동엽이나 성시경 같은 사람이다.",
+        "김정찬": "해적왕이 될 사람이다."
     }
 
     return responses[keyword]
@@ -271,6 +349,7 @@ def query_special_keywords(keyword: str) -> dict:
 def add_smu_schedule_structured(
     start_datetime: str,
     content: str,
+    user_id: str,
     end_datetime: Optional[str] = None
 ) -> dict:
     """
@@ -279,10 +358,11 @@ def add_smu_schedule_structured(
     Args:
         start_datetime (str): e.g., '2025-10-21', '2025-10-21 13:30', or ISO-like.
         content (str): schedule text/content.
+        user_id (str): student ID (학번). Required parameter.
         end_datetime (str, optional): same formats as start. If omitted, equals start.
 
     Returns:
-        dict: { ok, id, start_date_iso, end_date_iso, content, created_at_iso }
+        dict: { ok, id, start_date_iso, end_date_iso, content, type, user_id, created_at_iso }
     """
     # 1) Parse/validate datetimes
     start_dt = _coerce_to_kst(start_datetime)
@@ -291,8 +371,12 @@ def add_smu_schedule_structured(
         raise ValueError("end_datetime must be equal to or later than start_datetime.")
 
     created_at = datetime.now(KST)
+    
+    # 2) Set type and user_id (always personal)
+    schedule_type = "personal"
+    final_user_id = user_id
 
-    # 2) DB insert
+    # 3) DB insert
     conn = pymysql.connect(
         host=DB_HOST, user=DB_USER, password=DB_PASSWORD,
         database=DB_NAME, port=DB_PORT, cursorclass=DictCursor, charset="utf8mb4"
@@ -300,8 +384,8 @@ def add_smu_schedule_structured(
     try:
         with conn.cursor() as cur:
             sql = """
-                INSERT INTO smu_schedule (start_date, end_date, content, created_at)
-                VALUES (%s, %s, %s, %s)
+                INSERT INTO smu_schedule (start_date, end_date, content, type, user_id, created_at)
+                VALUES (%s, %s, %s, %s, %s, %s)
             """
             cur.execute(
                 sql,
@@ -309,6 +393,8 @@ def add_smu_schedule_structured(
                     start_dt.strftime("%Y-%m-%d %H:%M:%S"),
                     end_dt.strftime("%Y-%m-%d %H:%M:%S"),
                     content,
+                    schedule_type,
+                    final_user_id,
                     created_at.strftime("%Y-%m-%d %H:%M:%S"),
                 ),
             )
@@ -326,17 +412,20 @@ def add_smu_schedule_structured(
         "start_date_iso": start_dt.isoformat(),
         "end_date_iso": end_dt.isoformat(),
         "content": content,
+        "type": schedule_type,
+        "user_id": final_user_id,
         "created_at_iso": created_at.isoformat(),
     }
 
 
 @mcp.tool()
-def delete_smu_schedule_by_content(content_keyword: str) -> dict:
+def delete_smu_schedule_by_content(content_keyword: str, user_id: str) -> dict:
     """
-    내용 키워드로 일정을 삭제하는 도구.
+    내용 키워드로 개인 일정을 삭제하는 도구. (type='personal'인 일정만 삭제 가능)
     
     Args:
         content_keyword (str): 삭제할 일정의 내용에 포함된 키워드
+        user_id (str): student ID (학번). 해당 사용자의 개인 일정만 삭제 가능
         
     Returns:
         dict: { ok, deleted_count, deleted_ids, message }
@@ -347,9 +436,13 @@ def delete_smu_schedule_by_content(content_keyword: str) -> dict:
     )
     try:
         with conn.cursor() as cur:
-            # 먼저 해당 키워드와 일치하는 일정들을 조회
-            select_sql = "SELECT id, content FROM smu_schedule WHERE content LIKE %s"
-            cur.execute(select_sql, (f"%{content_keyword}%",))
+            # 먼저 해당 키워드와 일치하는 개인 일정들을 조회 (type='personal'이고 user_id가 일치하는 것만)
+            select_sql = """
+                SELECT id, content, type, user_id 
+                FROM smu_schedule 
+                WHERE content LIKE %s AND type = 'personal' AND user_id = %s
+            """
+            cur.execute(select_sql, (f"%{content_keyword}%", user_id))
             matching_records = cur.fetchall()
             
             if not matching_records:
@@ -357,12 +450,15 @@ def delete_smu_schedule_by_content(content_keyword: str) -> dict:
                     "ok": False,
                     "deleted_count": 0,
                     "deleted_ids": [],
-                    "message": f"No schedules found with keyword: {content_keyword}"
+                    "message": f"No personal schedules found with keyword: {content_keyword} for user_id: {user_id}"
                 }
             
-            # 일정들 삭제
-            delete_sql = "DELETE FROM smu_schedule WHERE content LIKE %s"
-            cur.execute(delete_sql, (f"%{content_keyword}%",))
+            # 개인 일정들만 삭제 (type='personal'이고 user_id가 일치하는 것만)
+            delete_sql = """
+                DELETE FROM smu_schedule 
+                WHERE content LIKE %s AND type = 'personal' AND user_id = %s
+            """
+            cur.execute(delete_sql, (f"%{content_keyword}%", user_id))
             conn.commit()
             
             deleted_ids = [record['id'] for record in matching_records]
@@ -372,7 +468,7 @@ def delete_smu_schedule_by_content(content_keyword: str) -> dict:
                 "ok": True,
                 "deleted_count": len(deleted_ids),
                 "deleted_ids": deleted_ids,
-                "message": f"Successfully deleted {len(deleted_ids)} schedules: {', '.join(deleted_contents[:3])}{'...' if len(deleted_contents) > 3 else ''}"
+                "message": f"Successfully deleted {len(deleted_ids)} personal schedules: {', '.join(deleted_contents[:3])}{'...' if len(deleted_contents) > 3 else ''}"
             }
     except Exception as e:
         conn.rollback()
@@ -408,8 +504,20 @@ def default_prompt(message: str) -> list[base.Message]:
             "1) Call `now_kr` (get date)\n"
             "2) Then call `query_smu_meals_by_date_category(date_iso, category)`\n"
             "When data includes URLs, always include them in the answer.\n"
-            "Convert the user’s natural language into structured inputs for the tool:\n"
+            "Convert the user's natural language into structured inputs for the tool:\n"
             "start_datetime and optional end_datetime must be absolute KST datetimes (YYYY-MM-DD or ISO-like), and content must be a concise title/description. If only one datetime is present, set end_datetime = start_datetime.\n"
+            "\n"
+            "IMPORTANT: User-specific data handling:\n"
+            "- When using MCP tools that query tables containing user_id (학번), extract the user's student ID (학번) from their message or context if available.\n"
+            "- For tables like smu_schedule, and other user-specific tables, include the user_id parameter in your queries when available.\n"
+            "- If the user mentions their student ID (학번) in their message, use that exact value as user_id.\n"
+            "- If no student ID is provided, proceed without user_id - do NOT ask the user to provide their student ID.\n"
+            "- For smu_schedule table: Handle data based on 'type' field:\n"
+            "  * 'common' type: Provide data to all users regardless of user_id\n"
+            "  * 'personal' type: Only provide data when user_id matches the record's user_id\n"
+            "  * When user_id is not available, only return 'common' type records\n"
+            "- When adding new schedules or personal data, include the user_id if available to ensure proper data association.\n"
+            "- Remember: user_id represents the student's 학번 (student ID number) and is used for personal data filtering.\n"
         ),
         base.UserMessage(message),
     ]
